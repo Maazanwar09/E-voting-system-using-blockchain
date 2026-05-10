@@ -22,6 +22,7 @@ function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/results" element={<ResultsPage />} />
+              <Route path="/results/:id" element={<ResultsPage />} />
             </Routes>
           </main>
           <Footer />

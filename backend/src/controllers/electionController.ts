@@ -30,7 +30,7 @@ export const createElection = async (req: any, res: Response): Promise<void> => 
       title,
       description,
       organization: organization || 'General',
-      status,
+      status: status as any,
       startTime,
       endTime,
       candidates: [],

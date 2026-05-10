@@ -15,7 +15,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/elections', electionRoutes);
 
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/e-voting';
 
 mongoose.connect(MONGODB_URI)

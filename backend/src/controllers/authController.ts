@@ -2,6 +2,14 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import { ethers } from 'ethers';
+
+// Hardhat local node Account 0 private key for admin actions
+const ADMIN_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const VOTING_CONTRACT_ADDRESS = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6";
+const VOTING_ABI = [
+  "function whitelistVoter(address _voter) public"
+];
 
 const generateToken = (id: string, role: string) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET || 'secret', {
@@ -90,6 +98,22 @@ export const updateWallet = async (req: any, res: Response): Promise<void> => {
       { new: true }
     ).select('-password');
     
+    // Whitelist the voter on the smart contract
+    if (walletAddress) {
+      try {
+        const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+        const wallet = new ethers.Wallet(ADMIN_PRIVATE_KEY, provider);
+        const contract = new ethers.Contract(VOTING_CONTRACT_ADDRESS, VOTING_ABI, wallet);
+        
+        console.log(`Whitelisting wallet on blockchain: ${walletAddress}`);
+        const tx = await contract.whitelistVoter(walletAddress);
+        await tx.wait();
+        console.log(`Successfully whitelisted: ${walletAddress}`);
+      } catch (bcError) {
+        console.error("Blockchain whitelist error:", bcError);
+      }
+    }
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

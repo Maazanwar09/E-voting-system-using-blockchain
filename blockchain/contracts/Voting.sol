@@ -30,6 +30,9 @@ contract Voting {
     // electionId => (voterAddress => bool)
     mapping(uint256 => mapping(address => bool)) public hasVoted;
 
+    // whitelisted addresses allowed to vote
+    mapping(address => bool) public whitelistedVoters;
+
     event ElectionCreated(uint256 electionId, string title);
     event CandidateAdded(uint256 electionId, uint256 candidateId, string name);
     event Voted(uint256 electionId, address voter, uint256 candidateId);
@@ -41,6 +44,12 @@ contract Voting {
 
     constructor() {
         admin = msg.sender;
+        // The admin should always be whitelisted implicitly or explicitly
+        whitelistedVoters[msg.sender] = true;
+    }
+
+    function whitelistVoter(address _voter) public onlyAdmin {
+        whitelistedVoters[_voter] = true;
     }
 
     function createElection(string memory _title, string memory _description, uint256 _startTime, uint256 _endTime) public onlyAdmin {
@@ -70,6 +79,7 @@ contract Voting {
         require(block.timestamp <= e.endTime, "Election has ended");
         require(!hasVoted[_electionId][msg.sender], "You have already voted in this election");
         require(_candidateId > 0 && _candidateId <= e.candidateCount, "Invalid candidate ID");
+        require(whitelistedVoters[msg.sender], "You are not a registered voter");
 
         hasVoted[_electionId][msg.sender] = true;
         electionCandidates[_electionId][_candidateId].voteCount++;

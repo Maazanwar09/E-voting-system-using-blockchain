@@ -15,13 +15,68 @@ const DashboardPage = () => {
   const [electionTitle, setElectionTitle] = useState('');
   const [electionDesc, setElectionDesc] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [elections, setElections] = useState<any[]>([]);
+  const [isLoadingElections, setIsLoadingElections] = useState(false);
 
-  // Redirect to login if not authenticated
+  // Candidate Form State
+  const [candidateName, setCandidateName] = useState('');
+  const [candidateDetails, setCandidateDetails] = useState('');
+  const [candidateElectionId, setCandidateElectionId] = useState('');
+  const [candidateImage, setCandidateImage] = useState('');
+  const [isAddingCandidate, setIsAddingCandidate] = useState(false);
+
   React.useEffect(() => {
     if (!user) {
       navigate('/login');
+    } else {
+      fetchElections();
     }
   }, [user, navigate]);
+
+  const fetchElections = async () => {
+    try {
+      setIsLoadingElections(true);
+      // Connect to Sepolia via Alchemy
+      const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+      
+      // Check if the contract is actually deployed at this address
+      const code = await provider.getCode(VOTING_CONTRACT_ADDRESS);
+      if (code === "0x") {
+        // Contract not deployed to Sepolia yet — show empty list gracefully
+        console.warn("Contract not deployed to Sepolia yet. Deploy first, then refresh.");
+        setElections([]);
+        return;
+      }
+
+      const contract = new ethers.Contract(VOTING_CONTRACT_ADDRESS, VOTING_CONTRACT_ABI, provider);
+      const count = await contract.electionCount();
+      const electionList = [];
+      
+      const start = Math.max(1, Number(count) - 10);
+      for (let i = Number(count); i >= start; i--) {
+        try {
+          const election = await contract.elections(i);
+          if (election.title) {
+            electionList.push({
+              id: i,
+              title: election.title,
+              description: election.description,
+              isActive: election.isActive,
+              candidateCount: Number(election.candidateCount)
+            });
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch election ${i}:`, e);
+        }
+      }
+      setElections(electionList);
+    } catch (error) {
+      console.error("Failed to fetch elections:", error);
+      setElections([]);
+    } finally {
+      setIsLoadingElections(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -54,19 +109,34 @@ const DashboardPage = () => {
 
   const createElection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!window.ethereum) return;
-    if (!user.walletAddress) return;
+    if (!window.ethereum) {
+      window.alert("MetaMask not detected! Please install MetaMask.");
+      return;
+    }
+    if (!user.walletAddress) {
+      window.alert("Please link your MetaMask wallet first!");
+      return;
+    }
 
     try {
       setIsCreating(true);
+
+      // Force MetaMask to switch to the local Hardhat network before transacting
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x7A69' }], // 0x7A69 = 31337 in hex
+      });
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(VOTING_CONTRACT_ADDRESS, VOTING_CONTRACT_ABI, signer);
 
       const startTime = Math.floor(Date.now() / 1000);
-      const endTime = startTime + (3600 * 24 * 7); 
+      const endTime = startTime + (3600 * 24 * 7);
 
-      const tx = await contract.createElection(electionTitle, electionDesc, startTime, endTime);
+      const tx = await contract.createElection(electionTitle, electionDesc, startTime, endTime, {
+        gasLimit: 3000000
+      });
       await tx.wait();
 
       await fetch('http://127.0.0.1:5000/api/elections', {
@@ -87,8 +157,58 @@ const DashboardPage = () => {
       setElectionDesc('');
     } catch (error: any) {
       console.error(error);
+      window.alert("Blockchain Error: " + (error.reason || error.message || "Unknown error"));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const addCandidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!window.ethereum) {
+      window.alert("MetaMask not detected! Please install MetaMask.");
+      return;
+    }
+    if (!user.walletAddress) {
+      window.alert("Please link your MetaMask wallet first!");
+      return;
+    }
+    if (!candidateElectionId) {
+      window.alert("Please select an election.");
+      return;
+    }
+
+    try {
+      setIsAddingCandidate(true);
+
+      // Force MetaMask to switch to the local Hardhat network before transacting
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x7A69' }], // 0x7A69 = 31337 in hex
+      });
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(VOTING_CONTRACT_ADDRESS, VOTING_CONTRACT_ABI, signer);
+
+      const tx = await contract.addCandidate(
+        Number(candidateElectionId), 
+        candidateName, 
+        candidateDetails, 
+        candidateImage || `https://api.dicebear.com/7.x/avataaars/svg?seed=${candidateName}`
+      );
+      await tx.wait();
+
+      setCandidateName('');
+      setCandidateDetails('');
+      setCandidateElectionId('');
+      setCandidateImage('');
+      window.alert("Candidate added successfully!");
+    } catch (error: any) {
+      console.error(error);
+      window.alert("Blockchain Error: " + (error.reason || error.message || "Unknown error"));
+    } finally {
+      setIsAddingCandidate(false);
     }
   };
 
@@ -97,6 +217,13 @@ const DashboardPage = () => {
 
     try {
       setIsConnecting(true);
+
+      // Ensure we're on the local Hardhat network
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x7A69' }], // 31337
+      });
+
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const address = accounts[0];
 
@@ -115,6 +242,7 @@ const DashboardPage = () => {
       }
     } catch (error: any) {
       console.error(error);
+      window.alert("Wallet Error: " + (error.message || "Failed to connect wallet"));
     } finally {
       setIsConnecting(false);
     }
@@ -288,6 +416,64 @@ const DashboardPage = () => {
                       )}
                     </motion.button>
                   </form>
+
+                  <div className="mt-12 pt-10 border-t border-white/10">
+                    <h3 className="text-2xl font-bold text-white tracking-tight mb-6">Manage Candidates</h3>
+                    <form onSubmit={addCandidate} className="space-y-6">
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2 col-span-2 md:col-span-1">
+                          <label className="text-sm font-semibold text-gray-300 ml-1">Select Election</label>
+                          <select
+                            required
+                            value={candidateElectionId}
+                            onChange={(e) => setCandidateElectionId(e.target.value)}
+                            className="w-full bg-black/20 border border-white/10 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary text-white transition-all text-lg appearance-none"
+                          >
+                            <option value="" disabled className="bg-dark text-gray-500">Choose an election...</option>
+                            {elections.map(e => (
+                              <option key={e.id} value={e.id} className="bg-dark">{e.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-2 col-span-2 md:col-span-1">
+                          <label className="text-sm font-semibold text-gray-300 ml-1">Candidate Name</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Jane Doe"
+                            value={candidateName}
+                            onChange={(e) => setCandidateName(e.target.value)}
+                            className="w-full bg-black/20 border border-white/10 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary text-white transition-all text-lg"
+                          />
+                        </div>
+                        <div className="space-y-2 col-span-2">
+                          <label className="text-sm font-semibold text-gray-300 ml-1">Candidate Details / Bio</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Senior majoring in Computer Science"
+                            value={candidateDetails}
+                            onChange={(e) => setCandidateDetails(e.target.value)}
+                            className="w-full bg-black/20 border border-white/10 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary text-white transition-all text-lg"
+                          />
+                        </div>
+                      </div>
+
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        type="submit"
+                        disabled={isAddingCandidate || !user.walletAddress}
+                        className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all ${
+                          isAddingCandidate || !user.walletAddress 
+                          ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-50' 
+                          : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-blue-500/20'
+                        }`}
+                      >
+                        {isAddingCandidate ? 'Adding to Blockchain...' : 'Register Candidate'}
+                      </motion.button>
+                    </form>
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div 
@@ -315,11 +501,58 @@ const DashboardPage = () => {
             </AnimatePresence>
           </div>
         </div>
+
+        {/* Live Elections Section */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-[2.5rem] shadow-2xl">
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="text-3xl font-bold">Live Elections</h3>
+            <button 
+              onClick={fetchElections}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            >
+              🔄
+            </button>
+          </div>
+
+          {isLoadingElections ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+            </div>
+          ) : elections.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {elections.map((election) => (
+                <motion.div
+                  key={election.id}
+                  whileHover={{ y: -5 }}
+                  className="bg-black/40 border border-white/10 p-6 rounded-3xl space-y-4 hover:border-primary/50 transition-colors cursor-pointer group"
+                  onClick={() => navigate(`/results/${election.id}`)}
+                >
+                  <div className="flex justify-between items-start">
+                    <span className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-2xl">🗳️</span>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${election.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {election.isActive ? 'Active' : 'Ended'}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold group-hover:text-primary transition-colors">{election.title}</h4>
+                    <p className="text-gray-400 text-sm line-clamp-2 mt-1">{election.description}</p>
+                  </div>
+                  <div className="pt-4 border-t border-white/5 flex justify-between items-center text-xs text-gray-500">
+                    <span>{election.candidateCount} Candidates</span>
+                    <span className="text-primary font-bold">View Details →</span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-20 bg-black/20 rounded-3xl border border-dashed border-white/10">
+              <p className="text-gray-500">No elections found on the blockchain.</p>
+            </div>
+          )}
+        </div>
       </motion.div>
     </div>
   );
 };
-
-export default DashboardPage;
 
 export default DashboardPage;
