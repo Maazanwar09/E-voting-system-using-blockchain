@@ -1,0 +1,45 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Blockchain specific (Hardhat/Foundry)
+artifacts/
+cache/
+typechain-types/
+flatten/
+coverage/
+coverage.json
+*.db
+*.sqlite
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Misc
+.vercel
+.turbo
+
